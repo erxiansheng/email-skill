@@ -178,8 +178,17 @@ async function fetchEmailsForAccount(account, searchCriteria, limit) {
   try {
     const lock = await client.getMailboxLock(mailbox);
     try {
+      const status = await client.status(mailbox, {
+        messages: true,
+        unseen: true,
+      });
       const uids = await client.search(searchCriteria, { uid: true });
-      if (uids.length === 0) return { uids: [], emails: [], total: 0 };
+      const mailboxTotal =
+        status && typeof status.messages === "number" ? status.messages : 0;
+      const unread =
+        status && typeof status.unseen === "number" ? status.unseen : 0;
+      if (uids.length === 0)
+        return { uids: [], emails: [], total: 0, mailboxTotal, unread };
 
       const targetUids = uids.slice(-limit).reverse();
       const uidRange = targetUids.join(",");
@@ -206,7 +215,46 @@ async function fetchEmailsForAccount(account, searchCriteria, limit) {
         });
       }
 
-      return { emails, total: uids.length };
+      return { emails, total: uids.length, mailboxTotal, unread };
+    } finally {
+      lock.release();
+    }
+  } finally {
+    await client.logout();
+  }
+}
+
+async function fetchLatestForAccount(account, searchCriteria) {
+  const mailbox = account.imap.mailbox || "INBOX";
+  const client = await connect(account);
+  try {
+    const lock = await client.getMailboxLock(mailbox);
+    try {
+      const uids = await client.search(searchCriteria, { uid: true });
+      if (uids.length === 0) return { email: null, total: 0 };
+
+      const latestUid = uids[uids.length - 1];
+      const msg = await client.fetchOne(latestUid, { uid: true, source: true });
+      const parsed = await simpleParser(msg.source);
+      const email = {
+        uid: msg.uid,
+        account: account.name,
+        accountLabel: account.label || account.name,
+        subject: parsed.subject || "(无主题)",
+        from: parsed.from ? parsed.from.text : "未知发件人",
+        to: parsed.to ? parsed.to.text : "",
+        cc: parsed.cc ? parsed.cc.text : "",
+        date: parsed.date ? parsed.date.toISOString() : "",
+        text: parsed.text || "",
+        html: parsed.html || "",
+        attachments: (parsed.attachments || []).map((a) => ({
+          filename: a.filename || "未命名文件",
+          contentType: a.contentType,
+          size: a.size,
+        })),
+      };
+
+      return { email, total: uids.length };
     } finally {
       lock.release();
     }
@@ -231,7 +279,8 @@ async function cmdCheck(args) {
   const results = await Promise.allSettled(
     accounts.map(async (acct) => {
       try {
-        const { emails, total } = await fetchEmailsForAccount(
+        const { emails, total, mailboxTotal, unread } =
+          await fetchEmailsForAccount(
           acct,
           searchCriteria,
           limit
@@ -241,6 +290,8 @@ async function cmdCheck(args) {
           label: acct.label || acct.name,
           count: emails.length,
           total,
+          mailboxTotal,
+          unread,
           emails,
           error: null,
         };
@@ -250,6 +301,8 @@ async function cmdCheck(args) {
           label: acct.label || acct.name,
           count: 0,
           total: 0,
+          mailboxTotal: 0,
+          unread: 0,
           emails: [],
           error: err.message,
         };
@@ -274,6 +327,8 @@ async function cmdCheck(args) {
         label: r.label,
         count: r.count,
         total: r.total,
+        mailboxTotal: r.mailboxTotal,
+        unread: r.unread,
         error: r.error,
       })),
       count: allEmails.length,
@@ -326,6 +381,79 @@ async function cmdFetch(args) {
   }
 }
 
+async function cmdLatest(args) {
+  const unseenOnly = args.unseen === true;
+  const recentTime = args.recent ? parseRecent(args.recent) : null;
+  const accounts = resolveAccounts(args);
+
+  const searchCriteria = {};
+  if (unseenOnly) searchCriteria.seen = false;
+  if (recentTime) searchCriteria.since = recentTime;
+
+  const results = await Promise.allSettled(
+    accounts.map(async (acct) => {
+      try {
+        const { email, total } = await fetchLatestForAccount(
+          acct,
+          searchCriteria
+        );
+        return {
+          account: acct.name,
+          label: acct.label || acct.name,
+          total,
+          email,
+          error: null,
+        };
+      } catch (err) {
+        return {
+          account: acct.name,
+          label: acct.label || acct.name,
+          total: 0,
+          email: null,
+          error: err.message,
+        };
+      }
+    })
+  );
+
+  const accountResults = results.map((r) =>
+    r.status === "fulfilled" ? r.value : r.reason
+  );
+
+  let latestEmail = null;
+  let latestTime = -1;
+  for (const r of accountResults) {
+    if (!r.email) continue;
+    const t = r.email.date ? new Date(r.email.date).getTime() : -1;
+    if (t > latestTime) {
+      latestTime = t;
+      latestEmail = r.email;
+    }
+  }
+
+  if (!latestEmail) {
+    const fallback = accountResults.find((r) => r.email);
+    latestEmail = fallback ? fallback.email : null;
+  }
+
+  console.log(
+    JSON.stringify({
+      multiAccount: accounts.length > 1,
+      accountCount: accounts.length,
+      accounts: accountResults.map((r) => ({
+        name: r.account,
+        label: r.label,
+        total: r.total,
+        hasMail: !!r.email,
+        error: r.error,
+      })),
+      count: latestEmail ? 1 : 0,
+      timestamp: new Date().toISOString(),
+      email: latestEmail,
+    })
+  );
+}
+
 // ─── 命令: search ───────────────────────────────────────────
 
 async function cmdSearch(args) {
@@ -345,7 +473,8 @@ async function cmdSearch(args) {
   const results = await Promise.allSettled(
     accounts.map(async (acct) => {
       try {
-        const { emails, total } = await fetchEmailsForAccount(
+        const { emails, total, mailboxTotal, unread } =
+          await fetchEmailsForAccount(
           acct,
           searchCriteria,
           limit
@@ -355,6 +484,8 @@ async function cmdSearch(args) {
           label: acct.label || acct.name,
           count: emails.length,
           total,
+          mailboxTotal,
+          unread,
           emails,
           error: null,
         };
@@ -364,6 +495,8 @@ async function cmdSearch(args) {
           label: acct.label || acct.name,
           count: 0,
           total: 0,
+          mailboxTotal: 0,
+          unread: 0,
           emails: [],
           error: err.message,
         };
@@ -386,6 +519,8 @@ async function cmdSearch(args) {
         label: r.label,
         count: r.count,
         total: r.total,
+        mailboxTotal: r.mailboxTotal,
+        unread: r.unread,
         error: r.error,
       })),
       count: allEmails.length,
@@ -500,6 +635,7 @@ async function main() {
         "命令:\n" +
         "  check           检查邮件 [--limit N] [--unseen] [--recent <time>]\n" +
         "  fetch <uid>     获取邮件详情 --account <name>\n" +
+        "  latest          获取最近一封邮件详情 [--unseen] [--recent <time>]\n" +
         "  search          搜索邮件 [--from X] [--subject X] [--unseen]\n" +
         "  mark-read <uids>  标记已读 --account <name>\n" +
         "  list-mailboxes  列出文件夹\n" +
@@ -521,6 +657,9 @@ async function main() {
         break;
       case "fetch":
         await cmdFetch(args);
+        break;
+      case "latest":
+        await cmdLatest(args);
         break;
       case "search":
         await cmdSearch(args);

@@ -1,5 +1,5 @@
 {
-  "name": "email-skill",
+  "name": "email-monitor",
   "version": "2.0.0",
   "description": "OpenClaw skill for monitoring multiple inbox emails and generating markdown summaries",
   "private": true,
@@ -9,6 +9,7 @@
     "check:all": "node scripts/imap-monitor.js check --limit 20",
     "check:account": "node scripts/imap-monitor.js check --unseen --limit 10 --account",
     "fetch": "node scripts/imap-monitor.js fetch",
+    "latest": "node scripts/imap-monitor.js latest",
     "search": "node scripts/imap-monitor.js search",
     "mailboxes": "node scripts/imap-monitor.js list-mailboxes"
   },

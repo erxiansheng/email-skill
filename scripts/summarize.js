@@ -82,13 +82,38 @@ function formatMultiAccountList(data) {
   // 账户概览
   if (data.multiAccount && data.accounts && data.accounts.length > 1) {
     lines.push(`> **${data.accountCount} 个邮箱** | 共 ${data.count} 封邮件 | ${formatTimestamp(data.timestamp)}\n`);
-    lines.push("| 邮箱 | 未读 | 总匹配 | 状态 |");
-    lines.push("| ---- | ---- | ------ | ---- |");
+    const hasMailboxStats = (data.accounts || []).some(
+      (a) =>
+        typeof a.unread === "number" || typeof a.mailboxTotal === "number"
+    );
+    if (hasMailboxStats) {
+      lines.push("| 邮箱 | 未读 | 已读 | 总量 | 匹配 | 状态 |");
+      lines.push("| ---- | ---- | ---- | ---- | ---- | ---- |");
+    } else {
+      lines.push("| 邮箱 | 未读 | 总匹配 | 状态 |");
+      lines.push("| ---- | ---- | ------ | ---- |");
+    }
     for (const acct of data.accounts) {
       const status = acct.error ? `❌ ${acct.error}` : "✅ 正常";
-      lines.push(
-        `| ${acct.label || acct.name} | ${acct.count} | ${acct.total} | ${status} |`
-      );
+      if (hasMailboxStats) {
+        const unread =
+          typeof acct.unread === "number" ? acct.unread : acct.count;
+        const mailboxTotal =
+          typeof acct.mailboxTotal === "number" ? acct.mailboxTotal : null;
+        const read =
+          typeof mailboxTotal === "number"
+            ? Math.max(0, mailboxTotal - unread)
+            : "-";
+        const totalText =
+          typeof mailboxTotal === "number" ? mailboxTotal : "-";
+        lines.push(
+          `| ${acct.label || acct.name} | ${unread} | ${read} | ${totalText} | ${acct.total} | ${status} |`
+        );
+      } else {
+        lines.push(
+          `| ${acct.label || acct.name} | ${acct.count} | ${acct.total} | ${status} |`
+        );
+      }
     }
     lines.push("");
   } else {
@@ -96,9 +121,28 @@ function formatMultiAccountList(data) {
       data.accounts && data.accounts[0]
         ? data.accounts[0].label || data.accounts[0].name
         : "INBOX";
-    lines.push(
-      `> 共 ${data.count} 封邮件 | 邮箱：${label} | ${formatTimestamp(data.timestamp)}\n`
-    );
+    const acct = data.accounts && data.accounts[0] ? data.accounts[0] : null;
+    if (acct && (typeof acct.unread === "number" || typeof acct.mailboxTotal === "number")) {
+      const unread =
+        typeof acct.unread === "number" ? acct.unread : data.count;
+      const mailboxTotal =
+        typeof acct.mailboxTotal === "number" ? acct.mailboxTotal : null;
+      const read =
+        typeof mailboxTotal === "number"
+          ? Math.max(0, mailboxTotal - unread)
+          : "-";
+      const totalText =
+        typeof mailboxTotal === "number" ? mailboxTotal : "-";
+      const matchCount =
+        typeof acct.total === "number" ? acct.total : data.count;
+      lines.push(
+        `> 未读 ${unread} | 已读 ${read} | 总量 ${totalText} | 匹配 ${matchCount} | 邮箱：${label} | ${formatTimestamp(data.timestamp)}\n`
+      );
+    } else {
+      lines.push(
+        `> 共 ${data.count} 封邮件 | 邮箱：${label} | ${formatTimestamp(data.timestamp)}\n`
+      );
+    }
   }
 
   lines.push("---\n");
@@ -241,6 +285,21 @@ function formatEmailDetail(email) {
   return lines.join("\n");
 }
 
+function formatEmptyDetail(data) {
+  const lines = [];
+  lines.push("## 📧 邮件详情\n");
+  const label =
+    data && data.accounts && data.accounts.length === 1
+      ? data.accounts[0].label || data.accounts[0].name
+      : "所有邮箱";
+  const time = data && data.timestamp ? formatTimestamp(data.timestamp) : "";
+  if (time) {
+    lines.push(`> ${label} | ${time}\n`);
+  }
+  lines.push("*暂无符合条件的邮件* ✅\n");
+  return lines.join("\n");
+}
+
 // ─── 主入口 ─────────────────────────────────────────────────
 
 async function main() {
@@ -259,7 +318,15 @@ async function main() {
     const data = JSON.parse(input.trim());
 
     if (mode === "detail") {
-      console.log(formatEmailDetail(data));
+      if (data && Object.prototype.hasOwnProperty.call(data, "email")) {
+        if (data.email) {
+          console.log(formatEmailDetail(data.email));
+        } else {
+          console.log(formatEmptyDetail(data));
+        }
+      } else {
+        console.log(formatEmailDetail(data));
+      }
     } else {
       console.log(formatMultiAccountList(data));
     }

@@ -21,10 +21,10 @@
 
 ```bash
 # 复制技能目录到 OpenClaw skills 目录
-cp -r email-monitor-skill 你自己路径/skills/email-monitor
+cp -r email-monitor-skill <skills_dir>/email-monitor
 
 # 安装依赖
-cd 你自己路径/skills/email-monitor
+cd <skills_dir>/email-monitor
 npm install
 
 # 配置邮箱（二选一）
@@ -41,10 +41,10 @@ cp .env.example .env
 
 ```bash
 # 克隆仓库到 OpenClaw skills 目录
-git clone https://github.com/erxiansheng/email-skill.git 你自己路径/skills/email-monitor
+git clone https://github.com/erxiansheng/email-skill.git <skills_dir>/email-monitor
 
 # 安装依赖
-cd 你自己路径/skills/email-monitor
+cd <skills_dir>/email-monitor
 npm install
 
 # 配置邮箱（二选一）
@@ -122,6 +122,11 @@ IMAP_MAILBOX=INBOX
 
 > 注意：当 `accounts.json` 存在时，`.env` 配置会被忽略。
 
+`<skills_dir>` 指实际安装的 skills 根目录，常见示例：
+- macOS/Linux：`~/.openclaw/skills`
+- Windows：`%USERPROFILE%\.openclaw\skills`
+已在技能目录中时，可直接执行后续 `node scripts/...` 命令，无需再 `cd`。
+
 ### 各邮箱配置参考
 
 | 邮箱     | host                   | 密码说明           |
@@ -143,6 +148,7 @@ IMAP_MAILBOX=INBOX
 最近2小时的邮件        → 按时间过滤（所有邮箱）
 搜索来自 boss@co.com 的邮件  → 跨所有邮箱搜索
 看看 work 账户 UID 42 的详情 → 指定账户看详情
+读取最近一份邮件内容   → 最近一封邮件详情
 标记已读 42,43 --account work → 批量标记
 我配了哪些邮箱         → 列出账户
 ```
@@ -168,6 +174,9 @@ node scripts/imap-monitor.js check --recent 6h
 # 获取邮件详情（必须指定账户）
 node scripts/imap-monitor.js fetch 42 --account work
 
+# 获取最近一封邮件详情（支持 --account / --recent / --unseen）
+node scripts/imap-monitor.js latest
+
 # 搜索所有邮箱
 node scripts/imap-monitor.js search --from "test@example.com" --unseen
 
@@ -183,6 +192,7 @@ node scripts/imap-monitor.js list-mailboxes
 # 管道格式化
 node scripts/imap-monitor.js check --unseen | node scripts/summarize.js
 node scripts/imap-monitor.js fetch 42 --account work | node scripts/summarize.js --mode detail
+node scripts/imap-monitor.js latest | node scripts/summarize.js --mode detail
 ```
 
 ## 目录结构
