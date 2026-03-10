@@ -1,5 +1,5 @@
 {
-  "name": "email-monitor-skill",
+  "name": "email-skill",
   "version": "2.0.0",
   "description": "OpenClaw skill for monitoring multiple inbox emails and generating markdown summaries",
   "private": true,
