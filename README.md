@@ -37,10 +37,24 @@ cp .env.example .env
 # 编辑 .env 填入一个邮箱
 ```
 
-### 方式二：ClawHub 安装（发布后）
+### 方式二：从 GitHub 安装
 
 ```bash
-clawhub install email-monitor
+# 克隆仓库到 OpenClaw skills 目录
+git clone https://github.com/erxiansheng/email-skill.git ~/.openclaw/skills/email-monitor
+
+# 安装依赖
+cd ~/.openclaw/skills/email-monitor
+npm install
+
+# 配置邮箱（二选一）
+# 多邮箱模式：
+cp accounts.json.example accounts.json
+# 编辑 accounts.json 填入你的多个邮箱
+
+# 单邮箱模式：
+cp .env.example .env
+# 编辑 .env 填入一个邮箱
 ```
 
 ## 配置
