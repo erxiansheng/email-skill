@@ -1,0 +1,40 @@
+{
+  "accounts": [
+    {
+      "name": "work",
+      "label": "工作邮箱",
+      "imap": {
+        "host": "imap.gmail.com",
+        "port": 993,
+        "tls": true,
+        "user": "your-work@gmail.com",
+        "pass": "your_app_password",
+        "mailbox": "INBOX"
+      }
+    },
+    {
+      "name": "personal",
+      "label": "个人邮箱",
+      "imap": {
+        "host": "imap.qq.com",
+        "port": 993,
+        "tls": true,
+        "user": "123456789@qq.com",
+        "pass": "your_auth_code",
+        "mailbox": "INBOX"
+      }
+    },
+    {
+      "name": "outlook",
+      "label": "Outlook",
+      "imap": {
+        "host": "outlook.office365.com",
+        "port": 993,
+        "tls": true,
+        "user": "your@outlook.com",
+        "pass": "your_password",
+        "mailbox": "INBOX"
+      }
+    }
+  ]
+}

@@ -1,0 +1,23 @@
+{
+  "name": "email-monitor-skill",
+  "version": "2.0.0",
+  "description": "OpenClaw skill for monitoring multiple inbox emails and generating markdown summaries",
+  "private": true,
+  "scripts": {
+    "accounts": "node scripts/imap-monitor.js list-accounts",
+    "check": "node scripts/imap-monitor.js check --unseen --limit 10",
+    "check:all": "node scripts/imap-monitor.js check --limit 20",
+    "check:account": "node scripts/imap-monitor.js check --unseen --limit 10 --account",
+    "fetch": "node scripts/imap-monitor.js fetch",
+    "search": "node scripts/imap-monitor.js search",
+    "mailboxes": "node scripts/imap-monitor.js list-mailboxes"
+  },
+  "dependencies": {
+    "imapflow": "^1.0.0",
+    "mailparser": "^3.7.0",
+    "dotenv": "^16.4.0"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}
