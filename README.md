@@ -41,7 +41,7 @@ cp .env.example .env
 
 ```bash
 # 克隆仓库到 OpenClaw skills 目录
-git clone https://github.com/erxiansheng/email-skill.git <skills_dir>/email-monitor
+git clone https://github.com/erxiansheng/email-monitor.git <skills_dir>/email-monitor
 
 # 安装依赖
 cd <skills_dir>/email-monitor
