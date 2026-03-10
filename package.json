@@ -11,12 +11,15 @@
     "fetch": "node scripts/imap-monitor.js fetch",
     "latest": "node scripts/imap-monitor.js latest",
     "search": "node scripts/imap-monitor.js search",
-    "mailboxes": "node scripts/imap-monitor.js list-mailboxes"
+    "mailboxes": "node scripts/imap-monitor.js list-mailboxes",
+    "monitor": "node scripts/imap-monitor.js monitor",
+    "send": "node scripts/imap-monitor.js send"
   },
   "dependencies": {
+    "dotenv": "^16.4.0",
     "imapflow": "^1.0.0",
     "mailparser": "^3.7.0",
-    "dotenv": "^16.4.0"
+    "nodemailer": "^6.10.1"
   },
   "engines": {
     "node": ">=18.0.0"

@@ -300,6 +300,30 @@ function formatEmptyDetail(data) {
   return lines.join("\n");
 }
 
+// ─── 发送结果格式化 ──────────────────────────────────────────
+
+function formatSendResult(data) {
+  const lines = [];
+  if (data.success) {
+    lines.push("## ✅ 邮件发送成功\n");
+    lines.push("| 字段 | 内容 |");
+    lines.push("| ---- | ---- |");
+    lines.push(`| 发件人 | ${data.from} |`);
+    lines.push(`| 收件人 | ${data.to} |`);
+    if (data.cc) lines.push(`| 抄送 | ${data.cc} |`);
+    lines.push(`| 主题 | ${data.subject} |`);
+    lines.push(`| 账户 | ${data.account} |`);
+    if (data.attachmentCount > 0) {
+      lines.push(`| 附件 | ${data.attachmentCount} 个 |`);
+    }
+    lines.push(`| Message-ID | \`${data.messageId}\` |`);
+  } else {
+    lines.push("## ❌ 邮件发送失败\n");
+    lines.push(`> 错误: ${data.error || "未知错误"}`);
+  }
+  return lines.join("\n");
+}
+
 // ─── 主入口 ─────────────────────────────────────────────────
 
 async function main() {
@@ -327,6 +351,8 @@ async function main() {
       } else {
         console.log(formatEmailDetail(data));
       }
+    } else if (mode === "send") {
+      console.log(formatSendResult(data));
     } else {
       console.log(formatMultiAccountList(data));
     }

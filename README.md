@@ -1,6 +1,6 @@
-# 📬 email-monitor — OpenClaw 多邮箱监控技能
+# 📬 email-monitor — OpenClaw 多邮箱监控与发送技能
 
-同时监控多个收件箱新邮件，按账户分组生成 Markdown 摘要，直接回复到聊天中。
+同时监控多个收件箱新邮件，按账户分组生成 Markdown 摘要，支持实时邮件推送和邮件发送，直接回复到聊天中。
 
 ## 功能
 
@@ -11,6 +11,8 @@
 - 搜索特定发件人或主题的邮件（跨所有账户）
 - 查看单封邮件完整详情
 - 标记邮件为已读
+- **实时邮件监控**（IMAP IDLE 服务模式，新邮件即时推送到聊天窗）
+- **发送邮件**（SMTP，支持 Markdown 正文、附件）
 - 自动分类标签（📌重要 / 📋工作 / 💰账单 / 📢通知 等）
 - 自动隐藏敏感信息（验证码、密码重置链接）
 - 向后兼容单邮箱 `.env` 配置
@@ -76,6 +78,13 @@ cp .env.example .env
         "user": "work@gmail.com",
         "pass": "your_app_password",
         "mailbox": "INBOX"
+      },
+      "smtp": {
+        "host": "smtp.gmail.com",
+        "port": 465,
+        "tls": true,
+        "user": "work@gmail.com",
+        "pass": "your_app_password"
       }
     },
     {
@@ -88,6 +97,13 @@ cp .env.example .env
         "user": "123456@qq.com",
         "pass": "your_auth_code",
         "mailbox": "INBOX"
+      },
+      "smtp": {
+        "host": "smtp.qq.com",
+        "port": 465,
+        "tls": true,
+        "user": "123456@qq.com",
+        "pass": "your_auth_code"
       }
     }
   ]
@@ -106,6 +122,13 @@ cp .env.example .env
 | `imap.user`    | 是   | 邮箱账号                         |
 | `imap.pass`    | 是   | 密码/授权码                      |
 | `imap.mailbox` | 否   | 收件箱名称，默认 INBOX           |
+| `smtp.host`    | 否   | SMTP 服务器地址（发送邮件时需要）|
+| `smtp.port`    | 否   | SMTP 端口，默认 465              |
+| `smtp.tls`     | 否   | 是否启用 TLS，默认 true          |
+| `smtp.user`    | 否   | SMTP 账号，默认同 imap.user      |
+| `smtp.pass`    | 否   | SMTP 密码，默认同 imap.pass      |
+
+> 如果未配置 `smtp` 字段，发送邮件时会自动从 `imap` 配置推导（将 host 中的 `imap` 替换为 `smtp`，使用相同的账号密码）。
 
 ### 单邮箱模式（向后兼容）
 
@@ -129,28 +152,30 @@ IMAP_MAILBOX=INBOX
 
 ### 各邮箱配置参考
 
-| 邮箱     | host                   | 密码说明           |
-| -------- | ---------------------- | ------------------ |
-| Gmail    | imap.gmail.com         | 需要应用专用密码   |
-| QQ 邮箱  | imap.qq.com            | 需要授权码         |
-| 163 邮箱 | imap.163.com           | 需要授权码         |
-| Outlook  | outlook.office365.com  | 账户密码或应用密码 |
-| 126 邮箱 | imap.126.com           | 需要授权码         |
-| 新浪邮箱 | imap.sina.com          | 需要授权码         |
+| 邮箱     | IMAP host              | SMTP host             | 密码说明           |
+| -------- | ---------------------- | --------------------- | ------------------ |
+| Gmail    | imap.gmail.com         | smtp.gmail.com        | 需要应用专用密码   |
+| QQ 邮箱  | imap.qq.com            | smtp.qq.com           | 需要授权码         |
+| 163 邮箱 | imap.163.com           | smtp.163.com          | 需要授权码         |
+| Outlook  | outlook.office365.com  | smtp.office365.com    | 账户密码或应用密码 |
+| 126 邮箱 | imap.126.com           | smtp.126.com          | 需要授权码         |
+| 新浪邮箱 | imap.sina.com          | smtp.sina.com         | 需要授权码         |
 
 ## 使用
 
 安装完成后，在 OpenClaw 聊天中直接说：
 
 ```
-查看邮件              → 所有邮箱未读邮件
-查看工作邮箱的邮件     → 只看 work 账户
-最近2小时的邮件        → 按时间过滤（所有邮箱）
+查看邮件                → 所有邮箱未读邮件
+查看工作邮箱的邮件       → 只看 work 账户
+最近2小时的邮件          → 按时间过滤（所有邮箱）
 搜索来自 boss@co.com 的邮件  → 跨所有邮箱搜索
 看看 work 账户 UID 42 的详情 → 指定账户看详情
-读取最近一份邮件内容   → 最近一封邮件详情
+读取最近一份邮件内容     → 最近一封邮件详情
 标记已读 42,43 --account work → 批量标记
-我配了哪些邮箱         → 列出账户
+开始监控邮箱             → 启动实时监控服务
+发邮件给 test@example.com → 发送邮件
+我配了哪些邮箱           → 列出账户
 ```
 
 ## 脚本直接调用
@@ -189,11 +214,41 @@ node scripts/imap-monitor.js mark-read 42,43 --account work
 # 列出所有账户的文件夹
 node scripts/imap-monitor.js list-mailboxes
 
+# 启动实时邮件监控（IMAP IDLE 服务模式）
+node scripts/imap-monitor.js monitor
+
+# 只监控指定账户
+node scripts/imap-monitor.js monitor --account work
+
+# 发送邮件
+node scripts/imap-monitor.js send --to "test@example.com" --subject "标题" --body "正文内容" --account work
+
+# 发送带附件的邮件
+node scripts/imap-monitor.js send --to "test@example.com" --subject "附件邮件" --body "请查收附件" --attach "file1.pdf,file2.docx" --account work
+
+# 通过 stdin 传递正文（支持 Markdown）
+echo "# 标题\n\n这是**正文**" | node scripts/imap-monitor.js send --to "test@example.com" --subject "Markdown邮件" --account work
+
 # 管道格式化
 node scripts/imap-monitor.js check --unseen | node scripts/summarize.js
 node scripts/imap-monitor.js fetch 42 --account work | node scripts/summarize.js --mode detail
 node scripts/imap-monitor.js latest | node scripts/summarize.js --mode detail
+node scripts/imap-monitor.js send --to "test@example.com" --subject "测试" --body "内容" --account work | node scripts/summarize.js --mode send
 ```
+
+## 命令一览
+
+| 命令 | 说明 | 主要参数 |
+| ---- | ---- | -------- |
+| `check` | 检查邮件列表 | `--limit N` `--unseen` `--recent <time>` `--account <name>` |
+| `fetch <uid>` | 获取单封邮件详情 | `--account <name>`（必填） |
+| `latest` | 获取最近一封邮件 | `--unseen` `--recent <time>` `--account <name>` |
+| `search` | 搜索邮件 | `--from X` `--subject X` `--unseen` `--account <name>` |
+| `mark-read <uids>` | 标记为已读 | `--account <name>`（必填） |
+| `monitor` | 实时监控新邮件 | `--account <name>` |
+| `send` | 发送邮件 | `--to` `--subject` `--body` `--cc` `--attach` `--account <name>` |
+| `list-mailboxes` | 列出邮箱文件夹 | `--account <name>` |
+| `list-accounts` | 列出已配置账户 | 无 |
 
 ## 目录结构
 
@@ -202,12 +257,21 @@ email-monitor-skill/
 ├── SKILL.md                # 技能定义（核心文件）
 ├── README.md               # 使用文档
 ├── package.json            # Node 依赖
-├── accounts.json.example   # 多邮箱配置模板
+├── accounts.json.example   # 多邮箱配置模板（含 IMAP + SMTP）
 ├── .env.example            # 单邮箱配置模板（向后兼容）
 └── scripts/
-    ├── imap-monitor.js     # IMAP 多邮箱监控脚本
+    ├── imap-monitor.js     # IMAP/SMTP 多邮箱监控与发送脚本
     └── summarize.js        # Markdown 摘要格式化工具
 ```
+
+## 依赖
+
+| 包名 | 用途 |
+| ---- | ---- |
+| [imapflow](https://www.npmjs.com/package/imapflow) | IMAP 客户端（支持 IDLE 实时监听） |
+| [mailparser](https://www.npmjs.com/package/mailparser) | 邮件 MIME 解析 |
+| [nodemailer](https://www.npmjs.com/package/nodemailer) | SMTP 邮件发送 |
+| [dotenv](https://www.npmjs.com/package/dotenv) | 环境变量加载 |
 
 ## 许可
 

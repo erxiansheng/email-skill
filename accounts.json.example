@@ -10,6 +10,13 @@
         "user": "your-work@gmail.com",
         "pass": "your_app_password",
         "mailbox": "INBOX"
+      },
+      "smtp": {
+        "host": "smtp.gmail.com",
+        "port": 465,
+        "tls": true,
+        "user": "your-work@gmail.com",
+        "pass": "your_app_password"
       }
     },
     {
@@ -22,6 +29,13 @@
         "user": "123456789@qq.com",
         "pass": "your_auth_code",
         "mailbox": "INBOX"
+      },
+      "smtp": {
+        "host": "smtp.qq.com",
+        "port": 465,
+        "tls": true,
+        "user": "123456789@qq.com",
+        "pass": "your_auth_code"
       }
     },
     {
@@ -34,6 +48,13 @@
         "user": "your@outlook.com",
         "pass": "your_password",
         "mailbox": "INBOX"
+      },
+      "smtp": {
+        "host": "smtp.office365.com",
+        "port": 587,
+        "tls": false,
+        "user": "your@outlook.com",
+        "pass": "your_password"
       }
     }
   ]

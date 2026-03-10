@@ -155,6 +155,57 @@ function truncate(text, maxLen = 500) {
   return text.slice(0, maxLen) + "...（全文已截断）";
 }
 
+function formatTimestamp(isoStr) {
+  if (!isoStr) return "未知时间";
+  const d = new Date(isoStr);
+  return d.toLocaleString("zh-CN", {
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+  });
+}
+
+function formatNewMailNotification(email) {
+  const lines = [];
+  lines.push(`\n## 📨 新邮件通知\n`);
+  lines.push(`> **${email.accountLabel}** | ${formatTimestamp(email.date)}\n`);
+  lines.push(`### ${email.subject}\n`);
+  lines.push(`- **发件人：** ${email.from}`);
+  lines.push(`- **收件人：** ${email.to}`);
+  if (email.hasAttachments) {
+    lines.push(`- **附件：** ${email.attachmentCount} 个`);
+  }
+  lines.push(`\n**内容预览：**\n`);
+  lines.push(email.preview || "(无内容)");
+  lines.push(`\n---`);
+  lines.push(`> UID: \`${email.uid}\` | 账户: \`${email.account}\``);
+  lines.push("");
+  return lines.join("\n");
+}
+
+function markdownToHtml(md) {
+  if (!md) return "";
+  let html = md
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;");
+  html = html.replace(/^### (.+)$/gm, "<h3>$1</h3>");
+  html = html.replace(/^## (.+)$/gm, "<h2>$1</h2>");
+  html = html.replace(/^# (.+)$/gm, "<h1>$1</h1>");
+  html = html.replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>");
+  html = html.replace(/\*(.+?)\*/g, "<em>$1</em>");
+  html = html.replace(/`([^`]+)`/g, "<code>$1</code>");
+  html = html.replace(/^- (.+)$/gm, "<li>$1</li>");
+  html = html.replace(/(<li>.*<\/li>\n?)+/g, "<ul>$&</ul>");
+  html = html.replace(/\n\n/g, "</p><p>");
+  html = html.replace(/\n/g, "<br>");
+  html = "<p>" + html + "</p>";
+  return `<div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; line-height: 1.6;">${html}</div>`;
+}
+
 // ─── IMAP 连接 ─────────────────────────────────────────────
 
 async function connect(account) {
@@ -178,15 +229,13 @@ async function fetchEmailsForAccount(account, searchCriteria, limit) {
   try {
     const lock = await client.getMailboxLock(mailbox);
     try {
-      const status = await client.status(mailbox, {
-        messages: true,
-        unseen: true,
-      });
+      const status = await client.status(mailbox, { messages: true });
+      // 使用 SEARCH 精确统计未读数，避免部分 IMAP 服务器 STATUS UNSEEN 不准确
+      const allUnseenUids = await client.search({ seen: false }, { uid: true });
+      const unread = allUnseenUids.length;
       const uids = await client.search(searchCriteria, { uid: true });
       const mailboxTotal =
         status && typeof status.messages === "number" ? status.messages : 0;
-      const unread =
-        status && typeof status.unseen === "number" ? status.unseen : 0;
       if (uids.length === 0)
         return { uids: [], emails: [], total: 0, mailboxTotal, unread };
 
@@ -199,7 +248,7 @@ async function fetchEmailsForAccount(account, searchCriteria, limit) {
         envelope: true,
         bodyStructure: true,
         source: true,
-      })) {
+      }, { uid: true })) {
         const parsed = await simpleParser(msg.source);
         emails.push({
           uid: msg.uid,
@@ -234,7 +283,7 @@ async function fetchLatestForAccount(account, searchCriteria) {
       if (uids.length === 0) return { email: null, total: 0 };
 
       const latestUid = uids[uids.length - 1];
-      const msg = await client.fetchOne(latestUid, { uid: true, source: true });
+      const msg = await client.fetchOne(latestUid, { uid: true, source: true }, { uid: true });
       const parsed = await simpleParser(msg.source);
       const email = {
         uid: msg.uid,
@@ -338,6 +387,109 @@ async function cmdCheck(args) {
   );
 }
 
+// ─── 命令: monitor（服务模式）────────────────────────────────
+
+async function monitorAccount(account) {
+  const mailbox = account.imap.mailbox || "INBOX";
+
+  while (true) {
+    let client;
+    let lock;
+    try {
+      client = new ImapFlow({
+        host: account.imap.host,
+        port: account.imap.port || 993,
+        secure: account.imap.tls !== false,
+        auth: { user: account.imap.user, pass: account.imap.pass },
+        logger: false,
+      });
+
+      await client.connect();
+      lock = await client.getMailboxLock(mailbox);
+
+      // 获取初始最大 UID
+      const initialUids = await client.search({ all: true }, { uid: true });
+      let lastUid = initialUids.length > 0 ? Math.max(...initialUids) : 0;
+
+      console.error(
+        `[${account.name}] 已连接 (${account.label})，当前邮件数: ${initialUids.length}，最新UID: ${lastUid}`
+      );
+
+      let checking = false;
+
+      const checkNewMails = async () => {
+        if (checking) return;
+        checking = true;
+        try {
+          // 等待 500ms 批量处理快速到达的多封邮件
+          await new Promise((r) => setTimeout(r, 500));
+
+          for await (const msg of client.fetch(`${lastUid + 1}:*`, {
+            uid: true,
+            source: true,
+          }, { uid: true })) {
+            if (msg.uid <= lastUid) continue;
+            const parsed = await simpleParser(msg.source);
+            const email = {
+              uid: msg.uid,
+              account: account.name,
+              accountLabel: account.label || account.name,
+              subject: parsed.subject || "(无主题)",
+              from: parsed.from ? parsed.from.text : "未知发件人",
+              to: parsed.to ? parsed.to.text : "",
+              date: parsed.date ? parsed.date.toISOString() : "",
+              preview: truncate(parsed.text, 200),
+              hasAttachments: (parsed.attachments || []).length > 0,
+              attachmentCount: (parsed.attachments || []).length,
+            };
+
+            console.log(formatNewMailNotification(email));
+            lastUid = msg.uid;
+          }
+        } catch (err) {
+          console.error(`[${account.name}] 获取新邮件失败: ${err.message}`);
+        } finally {
+          checking = false;
+        }
+      };
+
+      client.on("exists", checkNewMails);
+
+      // 等待连接关闭
+      await new Promise((resolve) => {
+        client.on("close", resolve);
+        client.on("error", (err) => {
+          console.error(`[${account.name}] 连接错误: ${err.message}`);
+          resolve();
+        });
+      });
+    } catch (err) {
+      console.error(`[${account.name}] 连接失败: ${err.message}`);
+    } finally {
+      if (lock) try { lock.release(); } catch (_) {}
+      if (client) try { await client.logout(); } catch (_) {}
+    }
+
+    console.error(`[${account.name}] 连接断开，5秒后重连...`);
+    await new Promise((r) => setTimeout(r, 5000));
+  }
+}
+
+async function cmdMonitor(args) {
+  const accounts = resolveAccounts(args);
+
+  console.error(`[monitor] 启动邮件监控服务，监控 ${accounts.length} 个邮箱`);
+  console.error(`[monitor] 按 Ctrl+C 停止监控\n`);
+
+  process.on("SIGINT", () => {
+    console.error("\n[monitor] 停止监控服务");
+    process.exit(0);
+  });
+
+  // 并发监控所有账户
+  await Promise.all(accounts.map((acct) => monitorAccount(acct)));
+}
+
 // ─── 命令: fetch ────────────────────────────────────────────
 
 async function cmdFetch(args) {
@@ -353,7 +505,7 @@ async function cmdFetch(args) {
   try {
     const lock = await client.getMailboxLock(mailbox);
     try {
-      const msg = await client.fetchOne(uid, { uid: true, source: true });
+      const msg = await client.fetchOne(uid, { uid: true, source: true }, { uid: true });
       const parsed = await simpleParser(msg.source);
       const result = {
         uid: msg.uid,
@@ -625,6 +777,102 @@ function cmdListAccounts() {
   );
 }
 
+// ─── 命令: send ─────────────────────────────────────────────
+
+async function cmdSend(args) {
+  let nodemailer;
+  try {
+    nodemailer = require("nodemailer");
+  } catch (_) {
+    console.error("Error: 请先安装 nodemailer: npm install nodemailer");
+    process.exit(1);
+  }
+
+  const account = resolveSingleAccount(args);
+  const to = args.to;
+  const subject = args.subject || "(无主题)";
+  const cc = args.cc || "";
+  const attachFiles = args.attach ? args.attach.split(",").map((f) => f.trim()) : [];
+
+  if (!to) {
+    console.error("Error: 请提供收件人 --to <email>");
+    process.exit(1);
+  }
+
+  // 读取正文：优先 --body，否则从 stdin 读取
+  let body = args.body || "";
+  if (!body && !process.stdin.isTTY) {
+    process.stdin.setEncoding("utf8");
+    for await (const chunk of process.stdin) {
+      body += chunk;
+    }
+    body = body.trim();
+  }
+
+  if (!body) {
+    console.error("Error: 请提供邮件正文 --body <text> 或通过 stdin 输入");
+    process.exit(1);
+  }
+
+  // SMTP 配置：优先使用 account.smtp，否则从 imap 推导
+  const smtp = account.smtp || {
+    host: account.imap.host.replace("imap", "smtp"),
+    port: 465,
+    tls: true,
+    user: account.imap.user,
+    pass: account.imap.pass,
+  };
+
+  const transporter = nodemailer.createTransport({
+    host: smtp.host,
+    port: smtp.port || 465,
+    secure: smtp.tls !== false,
+    auth: {
+      user: smtp.user || account.imap.user,
+      pass: smtp.pass || account.imap.pass,
+    },
+  });
+
+  const htmlBody = markdownToHtml(body);
+
+  const attachments = attachFiles
+    .filter((f) => fs.existsSync(f))
+    .map((f) => ({
+      filename: path.basename(f),
+      path: path.resolve(f),
+    }));
+
+  if (attachFiles.length > 0 && attachments.length !== attachFiles.length) {
+    const missing = attachFiles.filter((f) => !fs.existsSync(f));
+    console.error(`Warning: 以下附件文件未找到: ${missing.join(", ")}`);
+  }
+
+  const mailOptions = {
+    from: smtp.user || account.imap.user,
+    to: to,
+    cc: cc || undefined,
+    subject: subject,
+    text: body,
+    html: htmlBody,
+    attachments: attachments.length > 0 ? attachments : undefined,
+  };
+
+  const info = await transporter.sendMail(mailOptions);
+
+  console.log(
+    JSON.stringify({
+      success: true,
+      messageId: info.messageId,
+      account: account.name,
+      from: mailOptions.from,
+      to: to,
+      cc: cc || undefined,
+      subject: subject,
+      attachmentCount: attachments.length,
+    })
+  );
+}
+
 // ─── 主入口 ─────────────────────────────────────────────────
 
 async function main() {
@@ -638,11 +886,19 @@ async function main() {
         "  latest          获取最近一封邮件详情 [--unseen] [--recent <time>]\n" +
         "  search          搜索邮件 [--from X] [--subject X] [--unseen]\n" +
         "  mark-read <uids>  标记已读 --account <name>\n" +
+        "  monitor         实时监控新邮件（IMAP IDLE 服务模式）\n" +
+        "  send            发送邮件 --to <email> --subject <主题> --body <正文>\n" +
         "  list-mailboxes  列出文件夹\n" +
         "  list-accounts   列出已配置的账户\n\n" +
         "多邮箱选项:\n" +
         "  --account <name>   指定账户（逗号分隔多个）\n" +
-        "  --all              所有账户（check/search 的默认行为）"
+        "  --all              所有账户（check/search/monitor 的默认行为）\n\n" +
+        "发送选项:\n" +
+        "  --to <email>       收件人\n" +
+        "  --subject <text>   邮件主题\n" +
+        "  --body <text>      邮件正文（支持 Markdown）\n" +
+        "  --cc <email>       抄送\n" +
+        "  --attach <files>   附件路径（逗号分隔多个）"
     );
     process.exit(1);
   }
@@ -672,6 +928,12 @@ async function main() {
         break;
       case "list-accounts":
         cmdListAccounts();
+        break;
+      case "monitor":
+        await cmdMonitor(args);
+        break;
+      case "send":
+        await cmdSend(args);
         break;
       default:
         console.error(`未知命令: ${command}`);
