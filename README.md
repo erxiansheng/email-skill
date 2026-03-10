@@ -21,10 +21,10 @@
 
 ```bash
 # 复制技能目录到 OpenClaw skills 目录
-cp -r email-monitor-skill ~/.openclaw/skills/email-monitor
+cp -r email-monitor-skill 你自己路径/skills/email-monitor
 
 # 安装依赖
-cd ~/.openclaw/skills/email-monitor
+cd 你自己路径/skills/email-monitor
 npm install
 
 # 配置邮箱（二选一）
@@ -41,10 +41,10 @@ cp .env.example .env
 
 ```bash
 # 克隆仓库到 OpenClaw skills 目录
-git clone https://github.com/erxiansheng/email-skill.git ~/.openclaw/skills/email-monitor
+git clone https://github.com/erxiansheng/email-skill.git 你自己路径/skills/email-monitor
 
 # 安装依赖
-cd ~/.openclaw/skills/email-monitor
+cd 你自己路径/skills/email-monitor
 npm install
 
 # 配置邮箱（二选一）
